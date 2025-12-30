@@ -2,6 +2,9 @@
 
 A World of Warcraft addon that dynamically repositions ElvUI player and target unit frames to create space for your cooldown bar in the center, preventing overlap.
 
+
+Built to solve this horrible UI problem <img width="995" height="187" alt="image" src="https://github.com/user-attachments/assets/b6ddcf0d-23b3-4aaf-aaf7-b84e87c78d2c" />
+
 ## Features
 
 - **Dynamic Frame Positioning**: Automatically moves ElvUI player frame to the left and target frame to the right
