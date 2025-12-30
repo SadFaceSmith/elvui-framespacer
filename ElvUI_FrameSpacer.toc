@@ -1,0 +1,10 @@
+## Interface: 110100
+## Title: ElvUI Frame Spacer
+## Notes: Dynamically repositions ElvUI unit frames to create space for your cooldown bar
+## Author: Keycloak
+## Version: 1.0.0
+## Dependencies: ElvUI
+## SavedVariables: ElvUI_FrameSpacerDB
+
+Core.lua
+
