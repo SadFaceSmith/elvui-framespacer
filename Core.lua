@@ -390,12 +390,14 @@ SlashCmdList["ELVUIFS"] = function(msg)
     cmd = cmd:lower()
     
     if cmd == "config" or cmd == "options" or cmd == "" then
-        -- Open the ElvUI config to our section
+        -- Open the ElvUI config to our section (under Plugins)
         E:ToggleOptions()
+        Print("Look under 'Plugins' in the left sidebar")
         -- Navigate to our options (slight delay to ensure UI is loaded)
-        C_Timer.After(0.1, function()
+        C_Timer.After(0.3, function()
             if E.Libs.AceConfigDialog then
-                E.Libs.AceConfigDialog:SelectGroup("ElvUI", "framespacer")
+                -- Navigate to plugins section, then our addon
+                E.Libs.AceConfigDialog:SelectGroup("ElvUI", "plugins", addon)
             end
         end)
         
