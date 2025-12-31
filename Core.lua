@@ -8,33 +8,30 @@
 ]]
 
 local E, L, V, P, G = unpack(ElvUI)
-local EP = LibStub("LibElvUIPlugin-1.0")
-local addon, ns = ...
+local EP = LibStub("LibElvUIPlugin-1.0", true)
+local addonName, ns = ...
 
 -- Create the module
 local EFS = E:NewModule("FrameSpacer", "AceHook-3.0", "AceEvent-3.0")
+local UF = E:GetModule("UnitFrames")
 
--- Addon info for ElvUI plugin system
-local addonName = "ElvUI Frame Spacer"
+-- Localization stub
+local L = E.Libs.ACL:GetLocale("ElvUI", E.global.general.locale)
+
+-- Addon version
 local addonVersion = "1.1.0"
-
--- Initialization state
-local initAttempts = 0
-local MAX_INIT_ATTEMPTS = 10
-local isInitialized = false
 
 --------------------------------------------------------------------------------
 -- Default Profile Settings (stored in ElvUI's profile system)
 --------------------------------------------------------------------------------
 
--- These get inserted into ElvUI's P (profile) table
 P.framespacer = {
     enabled = true,
-    gapWidth = 430,             -- Width of the center gap (~12 icons from Blizzard cooldown bar)
-    frameSpacing = 0,           -- No gap - frames sit snug against the center area
-    verticalOffset = -200,      -- Vertical position from center
-    playerFrameWidth = 270,     -- Expected width of player frame
-    targetFrameWidth = 270,     -- Expected width of target frame
+    gapWidth = 430,
+    frameSpacing = 0,
+    verticalOffset = -200,
+    playerFrameWidth = 270,
+    targetFrameWidth = 270,
 }
 
 --------------------------------------------------------------------------------
@@ -49,56 +46,31 @@ end
 -- Frame Positioning Logic
 --------------------------------------------------------------------------------
 
--- Calculate and apply positions for player and target frames
 function EFS:RepositionUnitFrames()
+    if not E.db.framespacer or not E.db.framespacer.enabled then return end
+    if not E.private then return end
+    
     local db = E.db.framespacer
-    if not db or not db.enabled then return end
     
-    if not E or not E.private then return end
-    
-    -- Get ElvUI unit frames
     local playerFrame = _G["ElvUF_Player"]
     local targetFrame = _G["ElvUF_Target"]
     
     if not playerFrame or not targetFrame then
-        -- Frames not yet created, try again later
         C_Timer.After(0.5, function() self:RepositionUnitFrames() end)
         return
     end
     
-    -- The center gap (where your cooldown bar sits)
     local gapHalfWidth = db.gapWidth / 2
-    
-    -- Calculate frame positions
-    -- Player frame goes to the LEFT of the gap
     local playerX = -(gapHalfWidth + db.frameSpacing + (db.playerFrameWidth / 2))
-    
-    -- Target frame goes to the RIGHT of the gap
     local targetX = gapHalfWidth + db.frameSpacing + (db.targetFrameWidth / 2)
     
-    -- Apply positions
-    self:SetFramePosition(playerFrame, "CENTER", UIParent, "CENTER", playerX, db.verticalOffset)
-    self:SetFramePosition(targetFrame, "CENTER", UIParent, "CENTER", targetX, db.verticalOffset)
+    playerFrame:ClearAllPoints()
+    playerFrame:SetPoint("CENTER", UIParent, "CENTER", playerX, db.verticalOffset)
     
-    -- Store the mover positions in ElvUI's system
-    self:UpdateElvUIMovers(playerX, targetX)
-end
-
--- Set a frame's position with proper clearing
-function EFS:SetFramePosition(frame, point, relativeTo, relativePoint, x, y)
-    if not frame then return end
+    targetFrame:ClearAllPoints()
+    targetFrame:SetPoint("CENTER", UIParent, "CENTER", targetX, db.verticalOffset)
     
-    frame:ClearAllPoints()
-    frame:SetPoint(point, relativeTo, relativePoint, x, y)
-end
-
--- Update ElvUI's mover system to remember our positions
-function EFS:UpdateElvUIMovers(playerX, targetX)
-    if not E or not E.db then return end
-    
-    local db = E.db.framespacer
-    
-    -- Update the movers if they exist
+    -- Update movers
     local playerMover = _G["ElvUF_PlayerMover"]
     local targetMover = _G["ElvUF_TargetMover"]
     
@@ -114,33 +86,14 @@ function EFS:UpdateElvUIMovers(playerX, targetX)
 end
 
 --------------------------------------------------------------------------------
--- Dynamic Width Adjustment (for API/slash commands)
+-- Configuration Options
 --------------------------------------------------------------------------------
 
-function EFS:SetGapWidth(width)
-    E.db.framespacer.gapWidth = width
-    self:RepositionUnitFrames()
-end
-
-function EFS:SetFrameSpacing(spacing)
-    E.db.framespacer.frameSpacing = spacing
-    self:RepositionUnitFrames()
-end
-
-function EFS:SetVerticalOffset(offset)
-    E.db.framespacer.verticalOffset = offset
-    self:RepositionUnitFrames()
-end
-
---------------------------------------------------------------------------------
--- Configuration Panel (GUI)
---------------------------------------------------------------------------------
-
-function EFS:GetOptions()
-    local options = {
+local function GetOptions()
+    E.Options.args.framespacer = {
         order = 100,
         type = "group",
-        name = "Frame Spacer",
+        name = "|cff00ff96Frame Spacer|r",
         childGroups = "tab",
         args = {
             header = {
@@ -152,32 +105,30 @@ function EFS:GetOptions()
                 order = 2,
                 type = "description",
                 name = "Repositions ElvUI player and target frames to create space for your cooldown bar in the center.\n\n",
+                fontSize = "medium",
             },
             general = {
                 order = 10,
                 type = "group",
                 name = "General",
+                guiInline = true,
                 args = {
                     enabled = {
                         order = 1,
                         type = "toggle",
-                        name = "Enable",
+                        name = "Enable Frame Spacer",
                         desc = "Enable or disable frame repositioning",
                         get = function() return E.db.framespacer.enabled end,
                         set = function(_, value)
                             E.db.framespacer.enabled = value
                             if value then
                                 EFS:RepositionUnitFrames()
+                                Print("Enabled")
                             else
                                 Print("Disabled - use /reload to restore default positions")
                             end
                         end,
                         width = "full",
-                    },
-                    spacer1 = {
-                        order = 2,
-                        type = "description",
-                        name = "\n",
                     },
                     gapWidth = {
                         order = 10,
@@ -193,6 +144,7 @@ function EFS:GetOptions()
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
                     },
                     frameSpacing = {
                         order = 20,
@@ -208,6 +160,7 @@ function EFS:GetOptions()
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
                     },
                     verticalOffset = {
                         order = 30,
@@ -223,6 +176,7 @@ function EFS:GetOptions()
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
                     },
                 },
             },
@@ -230,11 +184,12 @@ function EFS:GetOptions()
                 order = 20,
                 type = "group",
                 name = "Frame Widths",
+                guiInline = true,
                 args = {
                     description = {
                         order = 1,
                         type = "description",
-                        name = "Adjust these if your unit frames are a different size than the default ElvUI frames.\n\n",
+                        name = "Adjust these if your unit frames are a different size than the default.\n",
                     },
                     playerFrameWidth = {
                         order = 10,
@@ -250,6 +205,7 @@ function EFS:GetOptions()
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
                     },
                     targetFrameWidth = {
                         order = 20,
@@ -265,6 +221,7 @@ function EFS:GetOptions()
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
                     },
                 },
             },
@@ -272,9 +229,20 @@ function EFS:GetOptions()
                 order = 30,
                 type = "group",
                 name = "Actions",
+                guiInline = true,
                 args = {
-                    resetDefaults = {
+                    applyNow = {
                         order = 1,
+                        type = "execute",
+                        name = "Apply Positions Now",
+                        desc = "Manually reapply frame positions",
+                        func = function()
+                            EFS:RepositionUnitFrames()
+                            Print("Positions applied")
+                        end,
+                    },
+                    resetDefaults = {
+                        order = 2,
                         type = "execute",
                         name = "Reset to Defaults",
                         desc = "Reset all Frame Spacer settings to their default values",
@@ -284,102 +252,57 @@ function EFS:GetOptions()
                             Print("Settings reset to defaults")
                         end,
                         confirm = true,
-                        confirmText = "Are you sure you want to reset Frame Spacer settings to defaults?",
-                    },
-                    applyNow = {
-                        order = 2,
-                        type = "execute",
-                        name = "Apply Positions Now",
-                        desc = "Manually reapply frame positions",
-                        func = function()
-                            EFS:RepositionUnitFrames()
-                            Print("Positions applied")
-                        end,
+                        confirmText = "Reset Frame Spacer settings to defaults?",
                     },
                 },
             },
         },
     }
+end
+
+--------------------------------------------------------------------------------
+-- Module Initialization
+--------------------------------------------------------------------------------
+
+function EFS:Initialize()
+    -- Register plugin with ElvUI (shows in plugin list)
+    if EP then
+        EP:RegisterPlugin(addonName, GetOptions)
+    end
     
-    return options
-end
-
--- Insert our options into ElvUI's config
-function EFS:InsertOptions()
-    E.Options.args.framespacer = self:GetOptions()
-end
-
---------------------------------------------------------------------------------
--- Hook into ElvUI's update system to maintain positions
---------------------------------------------------------------------------------
-
-function EFS:HookElvUIUpdates()
-    -- Hook the unit frame update functions to reapply our positions
-    local UF = E:GetModule("UnitFrames", true)
+    -- Hook UnitFrames updates to maintain positions
     if UF then
         self:SecureHook(UF, "CreateAndUpdateUF", function(_, unit)
             if unit == "player" or unit == "target" then
                 C_Timer.After(0.1, function()
-                    EFS:RepositionUnitFrames()
+                    self:RepositionUnitFrames()
                 end)
             end
         end)
     end
-end
-
---------------------------------------------------------------------------------
--- Module Initialization (ElvUI module system)
---------------------------------------------------------------------------------
-
-function EFS:Initialize()
-    -- Prevent duplicate initialization
-    if isInitialized then return end
     
-    -- Wait for ElvUI to fully initialize
-    if E.initialized then
-        isInitialized = true
-        
-        -- Register plugin with ElvUI
-        EP:RegisterPlugin(addon, self.InsertOptions, self)
-        
-        -- Hook into ElvUI updates
-        self:HookElvUIUpdates()
-        
-        -- Small delay to ensure unit frames are created
-        C_Timer.After(1, function()
-            self:RepositionUnitFrames()
-        end)
-        
-        -- Listen for profile changes
-        self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
-            C_Timer.After(2, function()
-                self:RepositionUnitFrames()
-            end)
-        end)
-    else
-        -- ElvUI not ready yet, try again shortly (with retry limit)
-        initAttempts = initAttempts + 1
-        if initAttempts < MAX_INIT_ATTEMPTS then
-            C_Timer.After(1, function()
-                self:Initialize()
-            end)
-        else
-            Print("Warning: ElvUI initialization timed out. Try /reload")
-        end
-    end
-end
-
--- Hook into ElvUI's profile system to reapply positions on profile change
-hooksecurefunc(E, "UpdateDB", function()
-    if isInitialized then
+    -- Hook profile changes
+    hooksecurefunc(E, "UpdateDB", function()
         C_Timer.After(0.5, function()
             EFS:RepositionUnitFrames()
         end)
-    end
-end)
+    end)
+    
+    -- Initial positioning
+    self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        C_Timer.After(2, function()
+            self:RepositionUnitFrames()
+        end)
+    end)
+    
+    -- Also run on initialize
+    C_Timer.After(1, function()
+        self:RepositionUnitFrames()
+    end)
+end
 
 --------------------------------------------------------------------------------
--- Slash Commands (kept for convenience)
+-- Slash Commands
 --------------------------------------------------------------------------------
 
 SLASH_ELVUIFS1 = "/efs"
@@ -387,17 +310,13 @@ SLASH_ELVUIFS2 = "/framespacer"
 
 SlashCmdList["ELVUIFS"] = function(msg)
     local cmd, arg = strsplit(" ", msg, 2)
-    cmd = cmd:lower()
+    cmd = (cmd or ""):lower()
     
-    if cmd == "config" or cmd == "options" or cmd == "" then
-        -- Open the ElvUI config to our section (under Plugins)
+    if cmd == "" or cmd == "config" or cmd == "options" then
         E:ToggleOptions()
-        Print("Look under 'Plugins' in the left sidebar")
-        -- Navigate to our options (slight delay to ensure UI is loaded)
-        C_Timer.After(0.3, function()
+        C_Timer.After(0.2, function()
             if E.Libs.AceConfigDialog then
-                -- Navigate to plugins section, then our addon
-                E.Libs.AceConfigDialog:SelectGroup("ElvUI", "plugins", addon)
+                E.Libs.AceConfigDialog:SelectGroup("ElvUI", "framespacer")
             end
         end)
         
@@ -407,13 +326,14 @@ SlashCmdList["ELVUIFS"] = function(msg)
             EFS:RepositionUnitFrames()
             Print("Frame repositioning ENABLED")
         else
-            Print("Frame repositioning DISABLED - use /reload to restore default positions")
+            Print("Frame repositioning DISABLED - /reload to restore defaults")
         end
         
     elseif cmd == "gap" and arg then
         local width = tonumber(arg)
         if width and width > 0 then
-            EFS:SetGapWidth(width)
+            E.db.framespacer.gapWidth = width
+            EFS:RepositionUnitFrames()
             Print("Gap width set to " .. width)
         else
             Print("Usage: /efs gap <number>")
@@ -422,7 +342,8 @@ SlashCmdList["ELVUIFS"] = function(msg)
     elseif cmd == "spacing" and arg then
         local spacing = tonumber(arg)
         if spacing then
-            EFS:SetFrameSpacing(spacing)
+            E.db.framespacer.frameSpacing = spacing
+            EFS:RepositionUnitFrames()
             Print("Frame spacing set to " .. spacing)
         else
             Print("Usage: /efs spacing <number>")
@@ -431,7 +352,8 @@ SlashCmdList["ELVUIFS"] = function(msg)
     elseif cmd == "voffset" and arg then
         local offset = tonumber(arg)
         if offset then
-            EFS:SetVerticalOffset(offset)
+            E.db.framespacer.verticalOffset = offset
+            EFS:RepositionUnitFrames()
             Print("Vertical offset set to " .. offset)
         else
             Print("Usage: /efs voffset <number>")
@@ -449,23 +371,21 @@ SlashCmdList["ELVUIFS"] = function(msg)
         print("  Gap Width: " .. db.gapWidth)
         print("  Frame Spacing: " .. db.frameSpacing)
         print("  Vertical Offset: " .. db.verticalOffset)
-        print("  Player Frame Width: " .. db.playerFrameWidth)
-        print("  Target Frame Width: " .. db.targetFrameWidth)
         
     else
         Print("Commands:")
         print("  /efs - Open configuration panel")
-        print("  /efs toggle - Enable/disable frame repositioning")
+        print("  /efs toggle - Enable/disable")
         print("  /efs gap <num> - Set center gap width")
-        print("  /efs spacing <num> - Set padding between frames and gap")
-        print("  /efs voffset <num> - Set vertical offset from center")
+        print("  /efs spacing <num> - Set frame padding")
+        print("  /efs voffset <num> - Set vertical offset")
         print("  /efs status - Show current settings")
-        print("  /efs reset - Reset to default settings")
+        print("  /efs reset - Reset to defaults")
     end
 end
 
--- Make addon globally accessible for other addons
+-- Global reference for other addons
 _G.ElvUIFrameSpacer = EFS
 
--- Register with ElvUI's module system
+-- Register module with ElvUI
 E:RegisterModule(EFS:GetName())
