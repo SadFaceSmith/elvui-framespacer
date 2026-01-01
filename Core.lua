@@ -4,6 +4,8 @@
     
     Features:
     - Profile support (per-character settings via ElvUI profiles)
+    - Per-spec gap width settings
+    - Auto-reposition on spec/talent changes
     - GUI configuration panel in ElvUI options
 ]]
 
@@ -19,7 +21,10 @@ local UF = E:GetModule("UnitFrames")
 local L = E.Libs.ACL:GetLocale("ElvUI", E.global.general.locale)
 
 -- Addon version
-local addonVersion = "1.1.0"
+local addonVersion = "1.2.0"
+
+-- Current spec tracking
+local currentSpecID = nil
 
 --------------------------------------------------------------------------------
 -- Default Profile Settings (stored in ElvUI's profile system)
@@ -27,11 +32,13 @@ local addonVersion = "1.1.0"
 
 P.framespacer = {
     enabled = true,
-    gapWidth = 430,
+    perSpecSettings = true,          -- Use different gap widths per spec
+    gapWidth = 430,                  -- Default/fallback gap width
     frameSpacing = 0,
     verticalOffset = -200,
     playerFrameWidth = 270,
     targetFrameWidth = 270,
+    specGapWidths = {},              -- Table to store per-spec gap widths: [specID] = width
 }
 
 --------------------------------------------------------------------------------
@@ -40,6 +47,46 @@ P.framespacer = {
 
 local function Print(msg)
     print("|cff00ff96ElvUI FrameSpacer:|r " .. msg)
+end
+
+-- Get current spec ID
+local function GetCurrentSpecID()
+    local specIndex = GetSpecialization()
+    if specIndex then
+        return GetSpecializationInfo(specIndex)
+    end
+    return nil
+end
+
+-- Get spec name for display
+local function GetSpecName(specID)
+    if not specID then return "Unknown" end
+    local _, name = GetSpecializationInfoByID(specID)
+    return name or "Unknown"
+end
+
+-- Get the gap width for the current spec (or default if per-spec is disabled)
+local function GetCurrentGapWidth()
+    local db = E.db.framespacer
+    if not db then return 430 end
+    
+    if db.perSpecSettings and currentSpecID and db.specGapWidths[currentSpecID] then
+        return db.specGapWidths[currentSpecID]
+    end
+    
+    return db.gapWidth
+end
+
+-- Set the gap width for the current spec
+local function SetCurrentGapWidth(width)
+    local db = E.db.framespacer
+    if not db then return end
+    
+    if db.perSpecSettings and currentSpecID then
+        db.specGapWidths[currentSpecID] = width
+    else
+        db.gapWidth = width
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -51,6 +98,7 @@ function EFS:RepositionUnitFrames()
     if not E.private then return end
     
     local db = E.db.framespacer
+    local gapWidth = GetCurrentGapWidth()
     
     local playerFrame = _G["ElvUF_Player"]
     local targetFrame = _G["ElvUF_Target"]
@@ -60,7 +108,7 @@ function EFS:RepositionUnitFrames()
         return
     end
     
-    local gapHalfWidth = db.gapWidth / 2
+    local gapHalfWidth = gapWidth / 2
     local playerX = -(gapHalfWidth + db.frameSpacing + (db.playerFrameWidth / 2))
     local targetX = gapHalfWidth + db.frameSpacing + (db.targetFrameWidth / 2)
     
@@ -83,6 +131,42 @@ function EFS:RepositionUnitFrames()
         targetMover:ClearAllPoints()
         targetMover:SetPoint("CENTER", UIParent, "CENTER", targetX, db.verticalOffset)
     end
+end
+
+--------------------------------------------------------------------------------
+-- Spec Change Handling
+--------------------------------------------------------------------------------
+
+function EFS:OnSpecChanged()
+    local newSpecID = GetCurrentSpecID()
+    
+    if newSpecID and newSpecID ~= currentSpecID then
+        local oldSpecName = GetSpecName(currentSpecID)
+        local newSpecName = GetSpecName(newSpecID)
+        
+        currentSpecID = newSpecID
+        
+        -- Initialize spec gap width if not set
+        local db = E.db.framespacer
+        if db and db.perSpecSettings and not db.specGapWidths[currentSpecID] then
+            db.specGapWidths[currentSpecID] = db.gapWidth
+        end
+        
+        -- Reposition with new spec's settings
+        C_Timer.After(0.5, function()
+            self:RepositionUnitFrames()
+            if db and db.perSpecSettings then
+                Print("Spec changed to " .. newSpecName .. " (Gap: " .. GetCurrentGapWidth() .. ")")
+            end
+        end)
+    end
+end
+
+function EFS:OnTalentChanged()
+    -- Talents changed - reposition in case cooldown bar changed
+    C_Timer.After(1, function()
+        self:RepositionUnitFrames()
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -130,17 +214,55 @@ local function GetOptions()
                         end,
                         width = "full",
                     },
+                    perSpecSettings = {
+                        order = 2,
+                        type = "toggle",
+                        name = "Per-Spec Gap Width",
+                        desc = "Remember different gap widths for each specialization. When you change specs, the addon will automatically use that spec's saved gap width.",
+                        get = function() return E.db.framespacer.perSpecSettings end,
+                        set = function(_, value)
+                            E.db.framespacer.perSpecSettings = value
+                            EFS:RepositionUnitFrames()
+                            if value then
+                                Print("Per-spec settings ENABLED - each spec will remember its own gap width")
+                            else
+                                Print("Per-spec settings DISABLED - using global gap width")
+                            end
+                        end,
+                        width = "full",
+                        disabled = function() return not E.db.framespacer.enabled end,
+                    },
+                    currentSpec = {
+                        order = 3,
+                        type = "description",
+                        name = function()
+                            local specName = GetSpecName(currentSpecID)
+                            local gapWidth = GetCurrentGapWidth()
+                            if E.db.framespacer.perSpecSettings then
+                                return "\n|cff00ff00Current Spec:|r " .. specName .. " (Gap: " .. gapWidth .. ")\n"
+                            else
+                                return "\n"
+                            end
+                        end,
+                        fontSize = "medium",
+                    },
                     gapWidth = {
                         order = 10,
                         type = "range",
-                        name = "Center Gap Width",
-                        desc = "Width of the center gap where your cooldown bar sits.\n\nReference:\n• 10 icons ≈ 360\n• 12 icons ≈ 430\n• 14 icons ≈ 500\n• 16 icons ≈ 580",
+                        name = function()
+                            if E.db.framespacer.perSpecSettings then
+                                return "Gap Width (" .. GetSpecName(currentSpecID) .. ")"
+                            else
+                                return "Center Gap Width"
+                            end
+                        end,
+                        desc = "Width of the center gap where your cooldown bar sits.\n\nReference:\n• 10 icons ≈ 360\n• 12 icons ≈ 430\n• 14 icons ≈ 500\n• 16 icons ≈ 580\n\nWhen per-spec is enabled, this sets the gap for your CURRENT spec only.",
                         min = 100,
                         max = 1000,
                         step = 5,
-                        get = function() return E.db.framespacer.gapWidth end,
+                        get = function() return GetCurrentGapWidth() end,
                         set = function(_, value)
-                            E.db.framespacer.gapWidth = value
+                            SetCurrentGapWidth(value)
                             EFS:RepositionUnitFrames()
                         end,
                         width = "full",
@@ -254,6 +376,20 @@ local function GetOptions()
                         confirm = true,
                         confirmText = "Reset Frame Spacer settings to defaults?",
                     },
+                    resetSpecWidths = {
+                        order = 3,
+                        type = "execute",
+                        name = "Reset All Spec Widths",
+                        desc = "Clear all saved per-spec gap widths",
+                        func = function()
+                            E.db.framespacer.specGapWidths = {}
+                            EFS:RepositionUnitFrames()
+                            Print("Per-spec gap widths cleared")
+                        end,
+                        confirm = true,
+                        confirmText = "Clear all per-spec gap widths?",
+                        hidden = function() return not E.db.framespacer.perSpecSettings end,
+                    },
                 },
             },
         },
@@ -265,6 +401,15 @@ end
 --------------------------------------------------------------------------------
 
 function EFS:Initialize()
+    -- Get initial spec
+    currentSpecID = GetCurrentSpecID()
+    
+    -- Initialize current spec's gap width if needed
+    local db = E.db.framespacer
+    if db and db.perSpecSettings and currentSpecID and not db.specGapWidths[currentSpecID] then
+        db.specGapWidths[currentSpecID] = db.gapWidth
+    end
+    
     -- Register plugin with ElvUI (shows in plugin list)
     if EP then
         EP:RegisterPlugin(addonName, GetOptions)
@@ -288,11 +433,31 @@ function EFS:Initialize()
         end)
     end)
     
-    -- Initial positioning
+    -- Register events for spec/talent changes
     self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        currentSpecID = GetCurrentSpecID()
         C_Timer.After(2, function()
             self:RepositionUnitFrames()
         end)
+    end)
+    
+    self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
+        if unit == "player" then
+            self:OnSpecChanged()
+        end
+    end)
+    
+    self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", function()
+        self:OnSpecChanged()
+    end)
+    
+    -- Talent/loadout changes (may affect cooldown bar)
+    self:RegisterEvent("PLAYER_TALENT_UPDATE", function()
+        self:OnTalentChanged()
+    end)
+    
+    self:RegisterEvent("TRAIT_CONFIG_UPDATED", function()
+        self:OnTalentChanged()
     end)
     
     -- Also run on initialize
@@ -332,9 +497,13 @@ SlashCmdList["ELVUIFS"] = function(msg)
     elseif cmd == "gap" and arg then
         local width = tonumber(arg)
         if width and width > 0 then
-            E.db.framespacer.gapWidth = width
+            SetCurrentGapWidth(width)
             EFS:RepositionUnitFrames()
-            Print("Gap width set to " .. width)
+            if E.db.framespacer.perSpecSettings then
+                Print("Gap width for " .. GetSpecName(currentSpecID) .. " set to " .. width)
+            else
+                Print("Gap width set to " .. width)
+            end
         else
             Print("Usage: /efs gap <number>")
         end
@@ -368,15 +537,23 @@ SlashCmdList["ELVUIFS"] = function(msg)
         local db = E.db.framespacer
         Print("Current settings:")
         print("  Enabled: " .. tostring(db.enabled))
-        print("  Gap Width: " .. db.gapWidth)
+        print("  Per-Spec Settings: " .. tostring(db.perSpecSettings))
+        print("  Current Spec: " .. GetSpecName(currentSpecID))
+        print("  Gap Width: " .. GetCurrentGapWidth())
         print("  Frame Spacing: " .. db.frameSpacing)
         print("  Vertical Offset: " .. db.verticalOffset)
+        if db.perSpecSettings then
+            print("  Saved Spec Widths:")
+            for specID, width in pairs(db.specGapWidths) do
+                print("    - " .. GetSpecName(specID) .. ": " .. width)
+            end
+        end
         
     else
         Print("Commands:")
         print("  /efs - Open configuration panel")
         print("  /efs toggle - Enable/disable")
-        print("  /efs gap <num> - Set center gap width")
+        print("  /efs gap <num> - Set center gap width (per-spec if enabled)")
         print("  /efs spacing <num> - Set frame padding")
         print("  /efs voffset <num> - Set vertical offset")
         print("  /efs status - Show current settings")

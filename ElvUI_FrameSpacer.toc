@@ -2,7 +2,7 @@
 ## Title: |cff1784d1ElvUI|r |cff00ff96Frame Spacer|r
 ## Notes: Dynamically repositions ElvUI unit frames to create space for your cooldown bar. Supports profiles.
 ## Author: SadFaceSmith
-## Version: 1.1.0
+## Version: 1.2.0
 ## Dependencies: ElvUI
 ## OptionalDeps: LibElvUIPlugin-1.0
 
